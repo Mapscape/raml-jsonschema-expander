@@ -1,0 +1,26 @@
+#%RAML 0.8
+title: Example
+version: v1
+
+baseUri: http://your.domain.here/
+
+schemas:
+  - JsonBook:  !include schema/Book.json
+  - JsonBooks: !include schema/Books.json
+
+/book:
+    get:
+        description: Retrieve one book
+        responses:
+            200:
+                body:
+                    application/json:
+                        schema: JsonBook
+/books:
+    get:
+        description: Retrieve a set of books
+        responses:
+            200:
+                body:
+                    application/json:
+                        schema: JsonBooks

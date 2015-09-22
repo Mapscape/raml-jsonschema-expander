@@ -8,16 +8,25 @@ var expandedSchemaCache = {};
 function expandJsonSchemas(ramlObj) {
     for (var schemaIndex in ramlObj.schemas) {
         var schema = ramlObj.schemas[schemaIndex];
-        var objectKey = Object.keys(schema)[0];
-        var schemaText = expandSchema(schema[objectKey]);
-        schema[objectKey] = schemaText;
+        for (var objectKeyIndex in Object.keys(schema)) {
+            var objectKey = Object.keys(schema)[objectKeyIndex];
+
+            var schemaText = schema[objectKey];
+            if (isJsonSchema(schemaText)) {
+                // Only try to expand JSON Schema documents, not e.g. XML schemas
+                schemaText = expandSchema(schemaText);
+                expandedSchemaCache[objectKey] = JSON.parse(schemaText);
+
+                ramlObj.schemas[schemaIndex][objectKey] = schemaText;
+            }
+        }
     }
-    
+
     for (var resourceIndex in ramlObj.resources) {
         var resource = ramlObj.resources[resourceIndex];
         ramlObj.resources[resourceIndex] = fixSchemaNodes(resource);
     }
-    
+
     return ramlObj;
 }
 
@@ -30,9 +39,19 @@ function fixSchemaNodes(node) {
         var key = keys[keyIndex];
         var value = node[key];
         if (key === "schema" && isJsonSchema(value)) {
+            var expandedObj;
             var schemaObj = JSON.parse(value);
             if (schemaObj.id && schemaObj.id in expandedSchemaCache) {
-                node[key] = JSON.stringify(expandedSchemaCache[schemaObj.id], null, 2);
+                // Do a lookup of URI references
+                expandedObj = expandedSchemaCache[schemaObj.id];
+            } else  if (schemaObj.id &&
+                        (schemaObj.id.charAt(0) == '#') &&
+                        (schemaObj.id.substr(1) in expandedSchemaCache)) {
+                // As fallback do a lookup up of a #-reference
+                expandedObj = expandedSchemaCache[schemaObj.id.substr(1)];
+            }
+            if (expandedObj) {
+                node[key] = JSON.stringify(expandedObj, null, 2);
             }
         } else if (isObject(value)) {
             node[key] = fixSchemaNodes(value);
@@ -59,14 +78,12 @@ function expandSchema(schemaText) {
         if (schemaObject.id) {
             var basePath = getBasePath(schemaObject.id);
             var expandedSchema = walkTree(basePath, schemaObject);
-            expandedSchemaCache[schemaObject.id] = expandedSchema;
-            return JSON.stringify(expandedSchema, null, 2);
+            return JSON.stringify(expandedSchema);
         } else {
             return schemaText;
         }
-    } else {
-        return schemaText;
     }
+    return schemaText;
 }
 
 /**
@@ -75,31 +92,41 @@ function expandSchema(schemaText) {
  */
 function walkTree(basePath, node) {
     var keys = Object.keys(node);
-    var expandedRef;
     for (var keyIndex in keys) {
         var key = keys[keyIndex];
         var value = node[key];
         if (key === "$ref") {
+            var expandedRef;
             if (value === "#") {
-                //Avoid recursively expanding
-                return node;
+
+                //Avoid recursively expanding, do nothing
+            } else if ((value.charAt(0) == '#') &&
+                       (value.substr(1) in expandedSchemaCache)) {
+                //Node has a ref, create expanded ref in its place.
+                expandedRef = expandedSchemaCache[value.substr(1)];
             } else {
                 //Node has a ref, create expanded ref in its place.
                 expandedRef = expandRef(basePath, value);
                 delete node["$ref"];
             }
+
+            if (expandedRef) {
+                //Merge an expanded ref into the node
+                //The original $ref attribute is removed since it will be replaced by a document
+                delete node["$ref"];
+                mergeObjects(node, expandedRef);
+                //Any present $schema and id attributes should no longer be in the (sub) document to make the complete document well formed
+                delete node["$schema"];
+                delete node["id"];
+            }
+
         } else if (isObject(value)) {
             node[key] = walkTree(basePath, value);
         } else if (isArray(value)) {
             node[key] = walkArray(basePath, value);
         }
-    }    
-    
-    //Merge an expanded ref into the node
-    if (expandedRef != null) {
-        mergeObjects(node, expandedRef);
     }
-    
+
     return node;
 }
 
@@ -125,7 +152,7 @@ function fetchRef(refUri) {
         return schemaHttpCache[refUri];
     } else {
         var request = urllibSync.request;
-        var response = request(refUri, { timeout: 30000 });            
+        var response = request(refUri, { timeout: 30000 });
         if (response.status == 200) {
             schemaHttpCache[refUri] = response.data;
         }
@@ -161,4 +188,11 @@ function isJsonSchema(schemaText) {
     return (schemaText.indexOf("http://json-schema.org/draft-04/schema") > 0);
 }
 
-module.exports.expandJsonSchemas = expandJsonSchemas;
+module.exports = {
+  expandJsonSchemas: expandJsonSchemas
+};
+
+if (require.main === module) {
+  console.log('This script is meant to be used as a library. You probably want to run bin/raml-jsonschema-expander if you\'re looking for a CLI.');
+  process.exit(1);
+}

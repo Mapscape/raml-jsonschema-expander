@@ -1,0 +1,15 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "id": "#JsonBooks",
+    "type": "object",
+    "description": "Set of Books",
+    "properties": {
+        "books": {
+            "type": "array",
+            "items": {
+                "$ref": "#JsonBook"
+            }
+        }
+    }
+}
+

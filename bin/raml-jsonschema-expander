@@ -1,0 +1,47 @@
+#!/usr/bin/env node
+
+'use strict';
+
+var program = require('commander');
+var raml2obj = require('raml2obj');
+var fs = require('fs');
+var ramlJsonSchemaExpander = require('..');
+var pjson = require('../package.json');
+
+program
+  .version(pjson.version)
+  .usage('[options] [RAML input file]')
+  .option('-i, --input [input]', 'RAML input file')
+  .option('-o, --output [output]', 'Expanded RAML output file')
+  .parse(process.argv);
+
+var input = program.input;
+
+if (!input) {
+  if (program.args.length !== 1) {
+    console.error('Error: You need to specify the RAML input file');
+    program.help();
+    process.exit(1);
+  }
+
+  input = program.args[0];
+}
+
+// Start the rendering process
+raml2obj.parse(input).then(function(ramlObj) {
+
+    ramlObj = ramlJsonSchemaExpander.expandJsonSchemas(ramlObj);
+    var ramlText = JSON.stringify(ramlObj, null, 2);
+
+    if (program.output) {
+      fs.writeFileSync(program.output, ramlText);
+    } else {
+      // Simply output to console
+      process.stdout.write(ramlText);
+      process.exit(0);
+    }
+
+}, function(error) {
+  console.log('Error parsing: ' + error);
+  process.exit(1);
+});

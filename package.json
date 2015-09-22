@@ -32,6 +32,8 @@
     "node": ">=0.6.0"
   },
   "dependencies": {
-    "urllib-sync": "^1.1.0"
+    "urllib-sync": "^1.1.0",
+    "commander": "2.8.x",
+    "raml2obj": "2.2.x"
   }
 }
